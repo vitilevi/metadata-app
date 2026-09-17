@@ -13,14 +13,19 @@ import queue
 import sys
 import threading
 import tkinter as tk
+import webbrowser
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 import exif_writer as writer
 from tags import GROUPS
 
 APP_TITLE = "Metadados de Imagem"
 PRESET_SUFFIX = ".metapreset.json"
+AUTHOR = "Víctor Faria"
+AUTHOR_URL = "https://github.com/vitilevi"
+AUTHOR_URL_LABEL = "github.com/vitilevi"
+CURSOR_HAND = "pointinghand" if sys.platform == "darwin" else "hand2"
 
 
 class MetadataApp(ttk.Frame):
@@ -64,6 +69,26 @@ class MetadataApp(ttk.Frame):
         self._build_file_panel(left)
         self._build_form_panel(right)
         self._build_bottom_panel()
+        self._build_footer()
+
+    def _build_footer(self) -> None:
+        footer = ttk.Frame(self)
+        footer.pack(fill="x", pady=(8, 0))
+
+        ttk.Separator(footer, orient="horizontal").pack(fill="x", pady=(0, 6))
+
+        credit = ttk.Frame(footer)
+        credit.pack()
+        ttk.Label(credit, text=f"Feito por {AUTHOR} — ", foreground="#777").pack(side="left")
+
+        link = ttk.Label(
+            credit, text=AUTHOR_URL_LABEL, foreground="#0a66c2", cursor=CURSOR_HAND
+        )
+        link.pack(side="left")
+        font = tkfont.Font(font=link.cget("font"))
+        font.configure(underline=True)
+        link.configure(font=font)
+        link.bind("<Button-1>", lambda _e: webbrowser.open_new_tab(AUTHOR_URL))
 
     def _build_file_panel(self, parent: ttk.Frame) -> None:
         ttk.Label(parent, text="Imagens", font=("", 13, "bold")).pack(anchor="w")
