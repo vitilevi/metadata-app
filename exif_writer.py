@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,24 +16,76 @@ from tags import ALL_FIELDS, GPS_NUMERIC_KEYS, IMAGE_EXTENSIONS
 
 CHUNK_SIZE = 150
 
+IS_WINDOWS = sys.platform.startswith("win")
+
+# No Windows, cada chamada abriria um console piscando na tela.
+_NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if IS_WINDOWS else {}
+
+APP_DIR = Path(__file__).resolve().parent
+
+INSTALL_HINT = {
+    "darwin": "brew install exiftool",
+    "win32": (
+        "winget install OliverBetz.ExifTool\n"
+        "ou baixe em https://exiftool.org e coloque exiftool.exe\n"
+        f"numa pasta do PATH, ou em: {APP_DIR / 'exiftool'}"
+    ),
+}.get(sys.platform, "sudo apt install libimage-exiftool-perl")
+
 
 class ExifToolMissing(RuntimeError):
     pass
 
 
+def _candidate_paths() -> list[Path]:
+    """Locais comuns do ExifTool fora do PATH (instalação manual no Windows)."""
+    if not IS_WINDOWS:
+        return [Path("/opt/homebrew/bin/exiftool"), Path("/usr/local/bin/exiftool")]
+
+    names = ("exiftool.exe", "exiftool(-k).exe")
+    roots = [
+        APP_DIR,
+        APP_DIR / "exiftool",
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "ExifTool",
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "ExifTool",
+        Path(r"C:\exiftool"),
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "ExifTool",
+    ]
+    return [root / name for root in roots if str(root) for name in names]
+
+
+_cached_path: str | None = None
+
+
 def exiftool_path() -> str:
-    path = shutil.which("exiftool")
-    if not path:
+    """Caminho do executável do ExifTool, com cache.
+
+    Procura no PATH e, se não achar, nos locais de instalação típicos —
+    no Windows é comum o exiftool.exe ficar fora do PATH.
+    """
+    global _cached_path
+    if _cached_path:
+        return _cached_path
+
+    found = shutil.which("exiftool")
+    if not found:
+        for candidate in _candidate_paths():
+            if candidate.is_file():
+                found = str(candidate)
+                break
+
+    if not found:
         raise ExifToolMissing(
-            "ExifTool não encontrado no PATH.\n\n"
-            "Instale com:  brew install exiftool"
+            "ExifTool não encontrado.\n\nInstale com:\n" + INSTALL_HINT
         )
-    return path
+
+    _cached_path = found
+    return found
 
 
 def exiftool_version() -> str:
     out = subprocess.run(
-        [exiftool_path(), "-ver"], capture_output=True, text=True, check=False
+        [exiftool_path(), "-ver"], capture_output=True, text=True, check=False, **_NO_WINDOW
     )
     return out.stdout.strip() or "?"
 
@@ -191,7 +244,9 @@ def _unique_destination(dest_dir: Path, name: str) -> Path:
 
 def _run_exiftool(args: list[str], files: Sequence[Path]) -> subprocess.CompletedProcess[str]:
     """Executa o ExifTool passando as opções via arquivo de argumentos (UTF-8)."""
-    with tempfile.NamedTemporaryFile("w", suffix=".args", delete=False, encoding="utf-8") as fh:
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".args", delete=False, encoding="utf-8", newline="\n"
+    ) as fh:
         for a in args:
             fh.write(a + "\n")
         for f in files:
@@ -207,7 +262,10 @@ def _run_exiftool(args: list[str], files: Sequence[Path]) -> subprocess.Complete
             "-m",                 # ignora avisos menores de tags
             "-@", argfile,
         ]
-        return subprocess.run(cmd, capture_output=True, text=True, check=False)
+        return subprocess.run(
+            cmd, capture_output=True, text=True, check=False,
+            encoding="utf-8", errors="replace", **_NO_WINDOW,
+        )
     finally:
         os.unlink(argfile)
 
@@ -293,7 +351,10 @@ def _exiftool_json(file: Path, tags: Sequence[str], numeric: bool) -> dict[str, 
         *[f"-{t}" for t in tags],
         str(file),
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    proc = subprocess.run(
+        cmd, capture_output=True, text=True, check=False,
+        encoding="utf-8", errors="replace", **_NO_WINDOW,
+    )
     if proc.returncode != 0 or not proc.stdout.strip():
         return {}
     try:

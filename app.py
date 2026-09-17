@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import queue
+import sys
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -489,12 +490,45 @@ class MetadataApp(ttk.Frame):
         self.status.config(text=status)
 
 
-def main() -> None:
-    root = tk.Tk()
+def _enable_dpi_awareness() -> None:
+    """Evita a UI borrada em monitores com escala no Windows."""
+    if not sys.platform.startswith("win"):
+        return
     try:
-        ttk.Style().theme_use("aqua")  # macOS
-    except tk.TclError:
+        import ctypes
+
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except Exception:  # versões antigas do Windows ou DLL ausente
         pass
+
+
+def _apply_theme(root: tk.Tk) -> None:
+    style = ttk.Style(root)
+    preferred = {"darwin": "aqua", "win32": "vista"}.get(sys.platform, "clam")
+    for theme in (preferred, "clam", "default"):
+        if theme in style.theme_names():
+            style.theme_use(theme)
+            return
+
+
+def _show_uncaught(exc_type, exc, tb) -> None:
+    """Sem console (pythonw no Windows) um erro sumiria em silêncio."""
+    import traceback
+
+    detail = "".join(traceback.format_exception(exc_type, exc, tb))
+    try:
+        messagebox.showerror(APP_TITLE, f"Erro inesperado:\n\n{detail[-1500:]}")
+    except Exception:
+        pass
+    sys.__excepthook__(exc_type, exc, tb)
+
+
+def main() -> None:
+    sys.excepthook = _show_uncaught
+    _enable_dpi_awareness()
+    root = tk.Tk()
+    root.report_callback_exception = _show_uncaught  # erros dentro de callbacks Tk
+    _apply_theme(root)
     MetadataApp(root)
     root.mainloop()
 

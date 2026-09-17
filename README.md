@@ -10,26 +10,36 @@ Photoshop, Finder, Google Fotos, bancos de imagem e afins.
 
 ## Como rodar
 
-Duplo clique em `run.command` (instala o ExifTool se faltar), ou pelo terminal:
+Roda em **Windows, macOS e Linux**. Os lançadores checam Python, Tkinter e
+ExifTool antes de abrir e tentam instalar o ExifTool se ele faltar.
+
+| Sistema | Como abrir |
+|---|---|
+| Windows | duplo clique em `run.bat` |
+| macOS | duplo clique em `run.command` |
+| Linux | `bash run.command` |
+
+Ou direto pelo terminal, de qualquer sistema:
 
 ```bash
-cd ~/projects/metadata-app && python3 app.py
+python3 app.py
 ```
 
 ### Requisitos
 
-| Item | Como obter | Obrigatório |
-|---|---|---|
-| Python 3.10+ com Tkinter | já vem no macOS | sim |
-| ExifTool | `brew install exiftool` | sim |
-| Pillow | `pip install pillow` | só para gerar imagens de teste |
+| Item | Windows | macOS | Linux |
+|---|---|---|---|
+| Python 3.10+ com Tkinter | [python.org](https://www.python.org/downloads/) — marque *Add python.exe to PATH* e *tcl/tk and IDLE* | já vem no sistema | `sudo apt install python3 python3-tk` |
+| ExifTool | `winget install OliverBetz.ExifTool` | `brew install exiftool` | `sudo apt install libimage-exiftool-perl` |
+| Pillow (só para gerar imagens de teste) | `pip install pillow` | idem | idem |
 
 Nenhuma dependência pip para uso normal — Tkinter é stdlib e o ExifTool é chamado
 por subprocess.
 
-```bash
-brew install exiftool
-```
+**Windows sem winget:** baixe o pacote em [exiftool.org](https://exiftool.org),
+renomeie `exiftool(-k).exe` para `exiftool.exe` e coloque numa pasta do PATH **ou**
+numa subpasta `exiftool\` ao lado do `app.py` — o programa procura nos dois lugares,
+além de `C:\Program Files\ExifTool` e `C:\exiftool`.
 
 ---
 
@@ -100,7 +110,8 @@ metadata-app/
 ├── app.py           # interface Tkinter: lista, abas, opções, log, thread worker
 ├── exif_writer.py   # camada sobre o ExifTool: args, lotes, cópia, leitura
 ├── tags.py          # mapa campo → tags EXIF/IPTC/XMP + extensões suportadas
-├── run.command      # atalho de abertura (duplo clique)
+├── run.bat          # atalho de abertura no Windows
+├── run.command      # atalho de abertura no macOS (e `bash run.command` no Linux)
 └── README.md
 ```
 
@@ -145,9 +156,22 @@ RW2, RAF, PEF, SRW).
 RAW aceita gravação, mas mexer no RAW original é sempre mais arriscado — prefira o
 modo de cópia para esses.
 
+## Notas de portabilidade
+
+- No Windows o app procura o `exiftool.exe` fora do PATH (pasta do projeto,
+  `exiftool\`, Program Files, `C:\exiftool`) e aceita o nome original
+  `exiftool(-k).exe`.
+- Chamadas ao ExifTool usam `CREATE_NO_WINDOW` no Windows, senão um console
+  piscaria a cada lote.
+- Entrada e saída do ExifTool são forçadas em UTF-8 — sem isso, acentos e `©`
+  quebrariam no console cp1252 do Windows.
+- `run.bat` abre o app com `pyw`/`pythonw` (sem console). Erros inesperados
+  aparecem em uma caixa de diálogo, já que não haveria terminal para mostrá-los.
+- A UI usa o tema nativo de cada sistema (`vista`, `aqua`, `clam`) e ativa
+  DPI awareness no Windows para não ficar borrada em telas com escala.
+- `.gitattributes` mantém `run.bat` com CRLF e os demais scripts com LF.
+
 ## Limitações conhecidas
 
-- macOS apenas no `run.command`; o `app.py` roda em Linux/Windows com Python+Tk,
-  desde que o ExifTool esteja no PATH.
 - PNG e GIF têm suporte parcial a EXIF pelo padrão do formato; XMP funciona bem.
 - Sem desfazer em massa: para reverter, use o backup `_original` ou o modo de cópia.
