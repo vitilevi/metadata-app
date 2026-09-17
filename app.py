@@ -32,9 +32,9 @@ class MetadataApp(ttk.Frame):
     def __init__(self, master: tk.Tk) -> None:
         super().__init__(master, padding=10)
         self.master.title(APP_TITLE)
-        self.master.geometry("1120x760")
-        self.master.minsize(940, 640)
+        self.master.minsize(900, 560)
         self.pack(fill="both", expand=True)
+        self._fit_to_screen()
 
         self.files: list[Path] = []
         self.vars: dict[str, tk.Variable] = {}
@@ -42,6 +42,7 @@ class MetadataApp(ttk.Frame):
         self.custom_rows: list[tuple[tk.StringVar, tk.StringVar]] = []
         self.events: queue.Queue = queue.Queue()
         self.running = False
+        self._tick_id: str | None = None
 
         self.only_selected = tk.BooleanVar(value=False)
         self.recursive = tk.BooleanVar(value=True)
@@ -53,13 +54,38 @@ class MetadataApp(ttk.Frame):
 
         self._build_ui()
         self._check_exiftool()
-        self.after(120, self._drain_events)
+        self._tick_id = self.after(120, self._drain_events)
+        self.master.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _on_close(self) -> None:
+        # Sem cancelar o tick, o Tk reclama do callback órfão ao fechar.
+        if self._tick_id is not None:
+            self.after_cancel(self._tick_id)
+            self._tick_id = None
+        self.master.destroy()
 
     # ------------------------------------------------------------------ UI
 
+    def _fit_to_screen(self) -> None:
+        """Abre a janela sem estourar a tela — telas de notebook têm ~800px úteis."""
+        self.master.update_idletasks()
+        screen_w = self.master.winfo_screenwidth()
+        screen_h = self.master.winfo_screenheight()
+        width = min(1120, screen_w - 80)
+        height = min(800, screen_h - 140)
+        x = max(0, (screen_w - width) // 2)
+        y = max(0, (screen_h - height) // 3)
+        self.master.geometry(f"{width}x{height}+{x}+{y}")
+
     def _build_ui(self) -> None:
+        # Ordem importa: rodapé e barra de ações são empacotados primeiro, a
+        # partir de baixo, para que o painel elástico ceda espaço a eles em vez
+        # de empurrá-los para fora da janela.
+        self._build_footer()
+        self._build_bottom_panel()
+
         paned = ttk.PanedWindow(self, orient="horizontal")
-        paned.pack(fill="both", expand=True)
+        paned.pack(side="top", fill="both", expand=True)
 
         left = ttk.Frame(paned, padding=(0, 0, 8, 0))
         right = ttk.Frame(paned)
@@ -68,12 +94,19 @@ class MetadataApp(ttk.Frame):
 
         self._build_file_panel(left)
         self._build_form_panel(right)
-        self._build_bottom_panel()
-        self._build_footer()
+
+        # A divisória começa larga o bastante para os rótulos dos botões.
+        self.after(0, lambda: self._place_sash(paned))
+
+    def _place_sash(self, paned: ttk.PanedWindow) -> None:
+        paned.update_idletasks()
+        width = paned.winfo_width()
+        if width > 1:
+            paned.sashpos(0, max(280, int(width * 0.32)))
 
     def _build_footer(self) -> None:
         footer = ttk.Frame(self)
-        footer.pack(fill="x", pady=(8, 0))
+        footer.pack(side="bottom", fill="x", pady=(8, 0))
 
         ttk.Separator(footer, orient="horizontal").pack(fill="x", pady=(0, 6))
 
@@ -93,12 +126,23 @@ class MetadataApp(ttk.Frame):
     def _build_file_panel(self, parent: ttk.Frame) -> None:
         ttk.Label(parent, text="Imagens", font=("", 13, "bold")).pack(anchor="w")
 
+        # Grade 2x2: em linha única os dois últimos botões saíam do painel
+        # quando a divisória ficava estreita.
         btns = ttk.Frame(parent)
         btns.pack(fill="x", pady=(6, 4))
-        ttk.Button(btns, text="Adicionar pasta…", command=self.add_folder).pack(side="left")
-        ttk.Button(btns, text="Adicionar arquivos…", command=self.add_files).pack(side="left", padx=4)
-        ttk.Button(btns, text="Remover", command=self.remove_selected).pack(side="left")
-        ttk.Button(btns, text="Limpar", command=self.clear_files).pack(side="left", padx=4)
+        btns.columnconfigure((0, 1), weight=1, uniform="botoes")
+        ttk.Button(btns, text="Adicionar pasta…", command=self.add_folder).grid(
+            row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4)
+        )
+        ttk.Button(btns, text="Adicionar arquivos…", command=self.add_files).grid(
+            row=1, column=0, columnspan=2, sticky="ew", pady=(0, 4)
+        )
+        ttk.Button(btns, text="Remover", command=self.remove_selected).grid(
+            row=2, column=0, sticky="ew", padx=(0, 4)
+        )
+        ttk.Button(btns, text="Limpar lista", command=self.clear_files).grid(
+            row=2, column=1, sticky="ew"
+        )
 
         ttk.Checkbutton(
             parent, text="Incluir subpastas ao adicionar uma pasta", variable=self.recursive
@@ -113,7 +157,8 @@ class MetadataApp(ttk.Frame):
         box.pack(fill="both", expand=True)
         scroll_y = ttk.Scrollbar(box, orient="vertical")
         self.listbox = tk.Listbox(
-            box, selectmode="extended", activestyle="none", yscrollcommand=scroll_y.set
+            box, selectmode="extended", activestyle="none", width=34,
+            yscrollcommand=scroll_y.set,
         )
         scroll_y.config(command=self.listbox.yview)
         scroll_y.pack(side="right", fill="y")
@@ -206,7 +251,7 @@ class MetadataApp(ttk.Frame):
 
     def _build_bottom_panel(self) -> None:
         bottom = ttk.Frame(self)
-        bottom.pack(fill="x", pady=(10, 0))
+        bottom.pack(side="bottom", fill="x", pady=(10, 0))
 
         opts = ttk.LabelFrame(bottom, text="Gravação", padding=8)
         opts.pack(fill="x")
@@ -261,7 +306,7 @@ class MetadataApp(ttk.Frame):
         log_frame = ttk.Frame(bottom)
         log_frame.pack(fill="both", expand=True)
         log_scroll = ttk.Scrollbar(log_frame, orient="vertical")
-        self.log = tk.Text(log_frame, height=7, wrap="word", state="disabled",
+        self.log = tk.Text(log_frame, height=5, wrap="word", state="disabled",
                            yscrollcommand=log_scroll.set)
         log_scroll.config(command=self.log.yview)
         log_scroll.pack(side="right", fill="y")
@@ -501,7 +546,8 @@ class MetadataApp(ttk.Frame):
                     self._reset_run_state("Erro")
         except queue.Empty:
             pass
-        self.after(120, self._drain_events)
+        if self.winfo_exists():
+            self._tick_id = self.after(120, self._drain_events)
 
     def _finish(self, result: writer.WriteResult) -> None:
         for message in result.messages:
