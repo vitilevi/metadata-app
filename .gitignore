@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Saídas de teste e backups do ExifTool
+testdata/
+*_original
+*.metapreset.json
+
+.DS_Store
+.idea/
+.vscode/
